@@ -215,12 +215,26 @@ void ExecutionEngine::AddIRModule(std::shared_ptr<ir::Module> ir_module) {
                 }
             }
         } else if (ir_target == ir::Target::amdgpu) {
+            // 检查 HIP 是否可用
+            if (!hip_loader.IsAvailable()) {
+                std::cerr << "Warning: HIP is not available. Skipping AMD GPU kernel loading for module: " 
+                          << ir_sub_module->name << std::endl;
+                continue;  // 跳过这个模块的处理
+            }
+            
             // 内核函数的地址存储到 JIT 环境中
             for (auto ir_function : ir_sub_module->functions) {
                 if (ir_function->annotation_dict.count("kernel")) {
                     std::string function_name = MangleHipName(ir_function->fullname);
                     hipFunction_t kernel_func =
                         hip_loader.LoadKernelFunction(hsaco_data, function_name);
+                    
+                    // 如果加载失败（返回 0），跳过这个内核
+                    if (kernel_func == 0) {
+                        std::cerr << "Warning: Failed to load kernel function: " << function_name << std::endl;
+                        continue;
+                    }
+                    
                     auto kernel_name_address_name = GetKernelFunctionAddressName(ir_function);
                     // 获取 JIT 环境中存储内核函数地址的指针。
                     int64_t *address =
